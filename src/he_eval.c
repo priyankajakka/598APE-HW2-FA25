@@ -52,12 +52,21 @@ Ciphertext mul_cipher(Ciphertext c1, Ciphertext c2, double q, double t,
   for (int i = 0; i < MAX_POLY_DEGREE; i++) {
     if (fabs(c0_prod.coeffs[i]) > 1e-9) {
       c0_res.coeffs[i] = round(t * c0_prod.coeffs[i] / q);
+      if (i > c0_res.degree) {
+          c0_res.degree = i;
+      }
     }
     if (fabs(c1_sum.coeffs[i]) > 1e-9) {
       c1_res.coeffs[i] = round(t * c1_sum.coeffs[i] / q);
+      if (i > c1_res.degree) {
+          c1_res.degree = i;
+      }
     }
     if (fabs(c2_prod.coeffs[i]) > 1e-9) {
       c2_res.coeffs[i] = round(t * c2_prod.coeffs[i] / q);
+      if (i > c2_res.degree) {
+          c2_res.degree = i;
+      }
     }
   }
 
@@ -76,9 +85,15 @@ Ciphertext mul_cipher(Ciphertext c1, Ciphertext c2, double q, double t,
     double va = prod_a.coeffs[i];
     if (fabs(vb) > 1e-9) {
       div_b.coeffs[i] = round(vb / p);
+      if (i > div_b.degree) {
+          div_b.degree = i;
+      }
     }
     if (fabs(va) > 1e-9) {
       div_a.coeffs[i] = round(va / p);
+      if (i > div_a.degree) {
+          div_a.degree = i;
+      }
     }
   }
 

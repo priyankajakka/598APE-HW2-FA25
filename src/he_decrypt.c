@@ -16,6 +16,7 @@ double decrypt(SecretKey sk, size_t n, double q, Poly poly_mod, double t,
       double v = round(scaled_pt.coeffs[i]);
       double result = round(t * v / q);
       dec.coeffs[i] = positive_fmod(result, t);
+      dec.degree = i > dec.degree ? i : dec.degree;
     }
   }
 
