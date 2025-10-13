@@ -14,6 +14,9 @@ Poly gen_binary_poly(size_t size) {
     if (fabs(v) > 1e-9) {
       max_degree = i;
     }
+    if (v != 0.0) {
+      p.max_degree = i;
+    }
   }
   p.degree = max_degree;
   return p;
@@ -42,6 +45,9 @@ Poly gen_normal_poly(size_t size, double mean, double stddev) {
     if (fabs(v) > 1e-9) {
       max_degree = i;
     }
+    if (v != 0.0) {
+      p.max_degree = i;
+    }
   }
   p.degree = max_degree;
   return p;
@@ -56,6 +62,9 @@ Poly gen_uniform_poly(size_t size, double modulus) {
     p.coeffs[i] = v;
     if (fabs(v) > 1e-9) {
       max_degree = i;
+    }
+    if (v != 0.0) {
+      p.max_degree = i;
     }
   }
   p.degree = max_degree;

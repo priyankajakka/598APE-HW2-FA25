@@ -19,6 +19,6 @@ double decrypt(SecretKey sk, size_t n, double q, Poly poly_mod, double t,
       dec.degree = i > dec.degree ? i : dec.degree;
     }
   }
-
+  dec.max_degree = scaled_pt.max_degree;
   return round(get_coeff(dec, 0));
 }

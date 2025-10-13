@@ -8,6 +8,7 @@ Poly encode_plain_integer(double t, double pt) {
   double v = positive_fmod(pt, t);
   m.coeffs[0] = v;
   m.degree = 0;
+  m.max_degree = 0;
   return m;
 }
 

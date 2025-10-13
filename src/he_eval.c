@@ -69,6 +69,9 @@ Ciphertext mul_cipher(Ciphertext c1, Ciphertext c2, double q, double t,
       }
     }
   }
+  c0_res.max_degree = c0_prod.max_degree;
+  c1_res.max_degree = c1_sum.max_degree;
+  c2_res.max_degree = c2_prod.max_degree;
 
   Poly c0_modq = coeff_mod(c0_res, q);
   Poly c1_modq = coeff_mod(c1_res, q);
@@ -96,6 +99,9 @@ Ciphertext mul_cipher(Ciphertext c1, Ciphertext c2, double q, double t,
       }
     }
   }
+
+  div_b.max_degree = prod_b.max_degree;
+  div_a.max_degree = prod_a.max_degree;
 
   Poly c20_modq = coeff_mod(div_b, q);
   Poly c21_modq = coeff_mod(div_a, q);

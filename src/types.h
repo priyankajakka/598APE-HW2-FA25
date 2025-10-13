@@ -9,6 +9,7 @@
 typedef struct {
   double coeffs[MAX_POLY_DEGREE];
   int degree;
+  int max_degree;
 } Poly;
 
 typedef struct {
