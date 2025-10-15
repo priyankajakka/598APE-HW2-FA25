@@ -157,9 +157,12 @@ int main(int argc, char **argv) {
   double fhe_time = fhe_end - fhe_start;
   printf("Decrypting FHE grayscale result...\n");
   uint8_t *fhe_gray = (uint8_t *)malloc(total_pixels * sizeof(uint8_t));
-  clock_t dec_start = clock();
+
+  double dec_start = omp_get_wtime();
   int64_t th1 = (t + 2) / 3;
   int64_t th2 = (2 * t + 2) / 3;
+
+  #pragma omp parallel for num_threads(4)
   for (int i = 0; i < total_pixels; i++) {
     int64_t val = decrypt(sk, n, q, poly_mod, t, gray_enc[i]);
     if (val >= th2) {
@@ -173,8 +176,9 @@ int main(int argc, char **argv) {
       val = 0;
     fhe_gray[i] = (uint8_t)val;
   }
-  clock_t dec_end = clock();
-  double dec_time = ((double)(dec_end - dec_start)) / CLOCKS_PER_SEC;
+
+  double dec_end = omp_get_wtime();
+  double dec_time = dec_end - dec_start;
 
   printf("Computing plaintext reference grayscale...\n");
   uint8_t *plain_gray = (uint8_t *)malloc(total_pixels * sizeof(uint8_t));
