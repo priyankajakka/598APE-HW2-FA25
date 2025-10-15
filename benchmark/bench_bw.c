@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <omp.h>
 
 typedef struct {
   uint8_t *data;
@@ -83,6 +84,7 @@ static void rgb_to_grayscale_fhe(Ciphertext *r_enc, Ciphertext *g_enc,
   int64_t inv3 = mod_inverse(3, t);
   assert(inv3 != -1 &&
          "3 has no modular inverse modulo t; choose t coprime with 3");
+  #pragma omp parallel for num_threads(4)
   for (int i = 0; i < total_pixels; i++) {
     Ciphertext sum = add_cipher(r_enc[i], g_enc[i], q, poly_mod);
     sum = add_cipher(sum, b_enc[i], q, poly_mod);
@@ -131,7 +133,8 @@ int main(int argc, char **argv) {
   Ciphertext *g_enc = (Ciphertext *)malloc(total_pixels * sizeof(Ciphertext));
   Ciphertext *b_enc = (Ciphertext *)malloc(total_pixels * sizeof(Ciphertext));
 
-  clock_t enc_start = clock();
+  double enc_start = omp_get_wtime();
+  #pragma omp parallel for num_threads(4)
   for (int i = 0; i < total_pixels; i++) {
     uint8_t r = img.data[i * img.channels + 0];
     uint8_t g = img.data[i * img.channels + 1];
@@ -141,18 +144,17 @@ int main(int argc, char **argv) {
     g_enc[i] = encrypt(pk, n, q, poly_mod, t, g);
     b_enc[i] = encrypt(pk, n, q, poly_mod, t, b);
   }
-  clock_t enc_end = clock();
-  double enc_time = ((double)(enc_end - enc_start)) / CLOCKS_PER_SEC;
+  double enc_end = omp_get_wtime();
+  double enc_time = enc_end - enc_start;
 
   printf("Applying FHE grayscale conversion (R+G+B)/3...\n");
   Ciphertext *gray_enc =
       (Ciphertext *)malloc(total_pixels * sizeof(Ciphertext));
-  clock_t fhe_start = clock();
+  double fhe_start = omp_get_wtime();
   rgb_to_grayscale_fhe(r_enc, g_enc, b_enc, gray_enc, total_pixels, q, t,
                        poly_mod);
-  clock_t fhe_end = clock();
-  double fhe_time = ((double)(fhe_end - fhe_start)) / CLOCKS_PER_SEC;
-
+  double fhe_end = omp_get_wtime();
+  double fhe_time = fhe_end - fhe_start;
   printf("Decrypting FHE grayscale result...\n");
   uint8_t *fhe_gray = (uint8_t *)malloc(total_pixels * sizeof(uint8_t));
   clock_t dec_start = clock();
