@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <omp.h>
 
 typedef struct {
   uint8_t *data;
@@ -58,6 +59,7 @@ static void rgb_to_grayscale(uint8_t *input, uint8_t *output, int width,
 
 static void sobel_plain(uint8_t *input, uint8_t *output, int width,
                         int height) {
+  #pragma omp parallel for collapse(2) num_threads(4)
   for (int y = 1; y < height - 1; y++) {
     for (int x = 1; x < width - 1; x++) {
       int gx = 0, gy = 0;
@@ -76,11 +78,12 @@ static void sobel_plain(uint8_t *input, uint8_t *output, int width,
       output[y * width + x] = (uint8_t)magnitude;
     }
   }
-
+  #pragma omp parallel for num_threads(4)
   for (int x = 0; x < width; x++) {
     output[x] = 0;
     output[(height - 1) * width + x] = 0;
   }
+  #pragma omp parallel for num_threads(4)
   for (int y = 0; y < height; y++) {
     output[y * width] = 0;
     output[y * width + (width - 1)] = 0;
@@ -97,6 +100,7 @@ Ciphertext encode_zero(int64_t q, Poly poly_mod) {
 static void sobel_fhe(Ciphertext *input_enc, Ciphertext *output_enc, int width,
                       int height, int64_t q, int64_t t, Poly poly_mod) {
 
+  #pragma omp parallel for collapse(2) num_threads(4)
   for (int y = 1; y < height - 1; y++) {
     for (int x = 1; x < width - 1; x++) {
       Ciphertext gx = encode_zero(q, poly_mod);
@@ -126,10 +130,12 @@ static void sobel_fhe(Ciphertext *input_enc, Ciphertext *output_enc, int width,
   }
 
   Ciphertext zero = encode_zero(q, poly_mod);
+  #pragma omp parallel for num_threads(4)
   for (int x = 0; x < width; x++) {
     output_enc[x] = zero;
     output_enc[(height - 1) * width + x] = zero;
   }
+  #pragma omp parallel for num_threads(4)
   for (int y = 0; y < height; y++) {
     output_enc[y * width] = zero;
     output_enc[y * width + (width - 1)] = zero;
@@ -172,24 +178,26 @@ int main(int argc, char **argv) {
   printf("Encrypting grayscale image...\n");
   Ciphertext *gray_enc =
       (Ciphertext *)malloc(total_pixels * sizeof(Ciphertext));
-  clock_t enc_start = clock();
+  double enc_start = omp_get_wtime();
+  #pragma omp parallel for num_threads(4)
   for (int i = 0; i < total_pixels; i++) {
     gray_enc[i] = encrypt(pk, n, q, poly_mod, t, gray[i]);
   }
-  clock_t enc_end = clock();
-  double enc_time = ((double)(enc_end - enc_start)) / CLOCKS_PER_SEC;
+  double enc_end = omp_get_wtime();
+  double enc_time = enc_end - enc_start;
 
   printf("Applying FHE Sobel edge detection...\n");
   Ciphertext *sobel_enc =
       (Ciphertext *)malloc(total_pixels * sizeof(Ciphertext));
-  clock_t fhe_start = clock();
+  double fhe_start = omp_get_wtime();
   sobel_fhe(gray_enc, sobel_enc, img.width, img.height, q, t, poly_mod);
-  clock_t fhe_end = clock();
-  double fhe_time = ((double)(fhe_end - fhe_start)) / CLOCKS_PER_SEC;
+  double fhe_end = omp_get_wtime();
+  double fhe_time = fhe_end - fhe_start;
 
   printf("Decrypting FHE Sobel result...\n");
   uint8_t *fhe_sobel = (uint8_t *)malloc(total_pixels * sizeof(uint8_t));
-  clock_t dec_start = clock();
+  double dec_start = omp_get_wtime();
+  #pragma omp parallel for num_threads(4)
   for (int i = 0; i < total_pixels; i++) {
     int64_t val = decrypt(sk, n, q, poly_mod, t, sobel_enc[i]);
     // Restore negative `gx + gy`
@@ -199,15 +207,15 @@ int main(int argc, char **argv) {
       val = 255;
     fhe_sobel[i] = (uint8_t)val;
   }
-  clock_t dec_end = clock();
-  double dec_time = ((double)(dec_end - dec_start)) / CLOCKS_PER_SEC;
+  double dec_end = omp_get_wtime();
+  double dec_time = dec_end - dec_start;
 
   printf("Computing plaintext Sobel edge detection...\n");
   uint8_t *plain_sobel = (uint8_t *)calloc(total_pixels, sizeof(uint8_t));
-  clock_t plain_start = clock();
+  double plain_start = omp_get_wtime();
   sobel_plain(gray, plain_sobel, img.width, img.height);
-  clock_t plain_end = clock();
-  double plain_time = ((double)(plain_end - plain_start)) / CLOCKS_PER_SEC;
+  double plain_end = omp_get_wtime();
+  double plain_time = plain_end - plain_start;
 
   printf("\n=== Results ===\n");
   printf("Encryption time: %.4f s (%.2f ms/pixel)\n", enc_time,
