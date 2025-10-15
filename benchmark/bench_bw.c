@@ -129,56 +129,94 @@ int main(int argc, char **argv) {
   SecretKey sk = keys.sk;
 
   printf("Encrypting RGB channels...\n");
-  Ciphertext *r_enc = (Ciphertext *)malloc(total_pixels * sizeof(Ciphertext));
-  Ciphertext *g_enc = (Ciphertext *)malloc(total_pixels * sizeof(Ciphertext));
-  Ciphertext *b_enc = (Ciphertext *)malloc(total_pixels * sizeof(Ciphertext));
 
   double enc_start = omp_get_wtime();
-  #pragma omp parallel for num_threads(4)
-  for (int i = 0; i < total_pixels; i++) {
-    uint8_t r = img.data[i * img.channels + 0];
-    uint8_t g = img.data[i * img.channels + 1];
-    uint8_t b = img.data[i * img.channels + 2];
 
-    r_enc[i] = encrypt(pk, n, q, poly_mod, t, r);
-    g_enc[i] = encrypt(pk, n, q, poly_mod, t, g);
-    b_enc[i] = encrypt(pk, n, q, poly_mod, t, b);
+  // Figure out how many pixels should be in each tile (by height and width)
+  int tRows = 2;
+  int tCols = 2;
+  int tile_h = (img.height + tRows - 1) / tRows;
+  int tile_w = (img.width + tCols - 1) / tCols;
+
+  uint8_t *fhe_gray = malloc(total_pixels * sizeof(uint8_t));
+
+  // Going through each tile
+  for (int tr = 0; tr < tRows; tr++) {
+    for (int tc = 0; tc < tCols; tc++) {
+      int row_start = tr * tile_h;
+      int col_start = tc * tile_w;
+      int row_end =
+          (row_start + tile_h > img.height) ? img.height : row_start + tile_h;
+      int col_end =
+          (col_start + tile_w > img.width) ? img.width : col_start + tile_w;
+
+      int tile_height = row_end - row_start;
+      int tile_width = col_end - col_start;
+      int tile_pixels = tile_height * tile_width;
+
+      Ciphertext *r_enc = malloc(tile_pixels * sizeof(Ciphertext));
+      Ciphertext *g_enc = malloc(tile_pixels * sizeof(Ciphertext));
+      Ciphertext *b_enc = malloc(tile_pixels * sizeof(Ciphertext));
+
+      #pragma omp parallel for collapse(2) num_threads(4)
+      for (int r = 0; r < tile_height; r++) {
+        for (int c = 0; c < tile_width; c++) {
+          int i = r * tile_width + c;
+          int og_image_idx =
+              (row_start + r) * img.width + (col_start + c);
+
+          uint8_t R = img.data[og_image_idx * img.channels + 0];
+          uint8_t G = img.data[og_image_idx * img.channels + 1];
+          uint8_t B = img.data[og_image_idx * img.channels + 2];
+
+          r_enc[i] = encrypt(pk, n, q, poly_mod, t, R);
+          g_enc[i] = encrypt(pk, n, q, poly_mod, t, G);
+          b_enc[i] = encrypt(pk, n, q, poly_mod, t, B);
+        }
+      }
+
+      Ciphertext *gray_enc = malloc(tile_pixels * sizeof(Ciphertext));
+
+      printf("Applying FHE grayscale conversion (R+G+B)/3...\n");
+
+      rgb_to_grayscale_fhe(r_enc, g_enc, b_enc, gray_enc, tile_pixels, q, t, poly_mod);
+
+      printf("Decrypting FHE grayscale result...\n");
+
+      uint8_t *fhe_gray_temp = malloc(tile_pixels * sizeof(uint8_t));
+
+      int64_t th1 = (t + 2) / 3;
+      int64_t th2 = (2 * t + 2) / 3;
+
+      #pragma omp parallel for num_threads(4)
+      for (int i = 0; i < tile_pixels; i++) {
+        int64_t val = decrypt(sk, n, q, poly_mod, t, gray_enc[i]);
+        if (val >= th2)
+          val -= th2;
+        else if (val >= th1)
+          val -= th1;
+        if (val > 255)
+          val = 255;
+        if (val < 0)
+          val = 0;
+        fhe_gray_temp[i] = (uint8_t)val;
+      }
+
+      for (int r = 0; r < tile_height; r++) {
+        memcpy(&fhe_gray[(row_start + r) * img.width + col_start],
+               &fhe_gray_temp[r * tile_width], tile_width * sizeof(uint8_t));
+      }
+
+      free(r_enc);
+      free(g_enc);
+      free(b_enc);
+      free(gray_enc);
+      free(fhe_gray_temp);
+    }
   }
+
   double enc_end = omp_get_wtime();
   double enc_time = enc_end - enc_start;
-
-  printf("Applying FHE grayscale conversion (R+G+B)/3...\n");
-  Ciphertext *gray_enc =
-      (Ciphertext *)malloc(total_pixels * sizeof(Ciphertext));
-  double fhe_start = omp_get_wtime();
-  rgb_to_grayscale_fhe(r_enc, g_enc, b_enc, gray_enc, total_pixels, q, t,
-                       poly_mod);
-  double fhe_end = omp_get_wtime();
-  double fhe_time = fhe_end - fhe_start;
-  printf("Decrypting FHE grayscale result...\n");
-  uint8_t *fhe_gray = (uint8_t *)malloc(total_pixels * sizeof(uint8_t));
-
-  double dec_start = omp_get_wtime();
-  int64_t th1 = (t + 2) / 3;
-  int64_t th2 = (2 * t + 2) / 3;
-
-  #pragma omp parallel for num_threads(4)
-  for (int i = 0; i < total_pixels; i++) {
-    int64_t val = decrypt(sk, n, q, poly_mod, t, gray_enc[i]);
-    if (val >= th2) {
-      val -= th2;
-    } else if (val >= th1) {
-      val -= th1;
-    }
-    if (val > 255)
-      val = 255;
-    if (val < 0)
-      val = 0;
-    fhe_gray[i] = (uint8_t)val;
-  }
-
-  double dec_end = omp_get_wtime();
-  double dec_time = dec_end - dec_start;
 
   printf("Computing plaintext reference grayscale...\n");
   uint8_t *plain_gray = (uint8_t *)malloc(total_pixels * sizeof(uint8_t));
@@ -212,9 +250,8 @@ int main(int argc, char **argv) {
   printf("\n=== Results ===\n");
   printf("Encryption time: %.4f s (%.2f ms/pixel)\n", enc_time,
          enc_time * 1000.0 / total_pixels);
-  printf("FHE grayscale conversion time: %.4f s\n", fhe_time);
-  printf("Decryption time: %.4f s (%.2f ms/pixel)\n", dec_time,
-         dec_time * 1000.0 / total_pixels);
+  printf("FHE grayscale conversion time: (included in encryption time)\n");
+  printf("Decryption time: (included in encryption time)\n");
   printf("Plaintext grayscale time: %.4f s\n", plain_time);
   printf("L2 norm error: %.4f\n", l2_error);
   printf("Average error per pixel: %.4f\n", avg_error);
@@ -235,10 +272,6 @@ int main(int argc, char **argv) {
          "decrypted)\n");
   printf("  output/plaintext_grayscale.png  (plaintext reference grayscale)\n");
 
-  free(r_enc);
-  free(g_enc);
-  free(b_enc);
-  free(gray_enc);
   free(fhe_gray);
   free(plain_gray);
   free_image(img);
