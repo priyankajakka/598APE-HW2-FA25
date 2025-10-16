@@ -175,40 +175,83 @@ int main(int argc, char **argv) {
   PublicKey pk = keys.pk;
   SecretKey sk = keys.sk;
 
+  uint8_t *fhe_sobel = malloc(total_pixels * sizeof(uint8_t));
+
   printf("Encrypting grayscale image...\n");
-  Ciphertext *gray_enc =
-      (Ciphertext *)malloc(total_pixels * sizeof(Ciphertext));
+
   double enc_start = omp_get_wtime();
-  #pragma omp parallel for num_threads(4)
-  for (int i = 0; i < total_pixels; i++) {
-    gray_enc[i] = encrypt(pk, n, q, poly_mod, t, gray[i]);
+
+  int tRows = 2;
+  int tCols = 2;
+  int tile_h = (img.height + tRows - 1) / tRows;
+  int tile_w = (img.width  + tCols - 1) / tCols;
+
+  for (int tr = 0; tr < tRows; tr++) {
+    for (int tc = 0; tc < tCols; tc++) {
+      int row_start = tr * tile_h;
+      int col_start = tc * tile_w;
+      int row_end = (row_start + tile_h > img.height) ? img.height : row_start + tile_h;
+      int col_end = (col_start + tile_w > img.width)  ? img.width  : col_start + tile_w;
+
+      int tile_height = row_end - row_start;
+      int tile_width = col_end - col_start;
+      int tile_pixels = tile_height * tile_width;
+
+      int buffer[4] = {
+          (row_start > 0) ? 1 : 0,  // top
+          (row_end   < img.height) ? 1 : 0,  // bottom
+          (col_start > 0) ? 1 : 0,  // left
+          (col_end   < img.width) ? 1 : 0   // right
+      };
+
+      int buffered_height = tile_height + buffer[0] + buffer[1];
+      int buffered_width = tile_width  + buffer[2] + buffer[3];
+
+      Ciphertext *gray_enc  = (Ciphertext *)malloc((size_t)buffered_height * buffered_width * sizeof(Ciphertext));
+      Ciphertext *sobel_enc = (Ciphertext *)malloc((size_t)buffered_height * buffered_width * sizeof(Ciphertext));
+
+      uint8_t *fhe_sobel_temp = (uint8_t *)malloc((size_t)tile_pixels * sizeof(uint8_t));
+
+      #pragma omp parallel for collapse(2) num_threads(4)
+      for (int r = 0; r < buffered_height; r++) {
+        for (int c = 0; c < buffered_width; c++) {
+          int og_image_idx = (row_start - buffer[0] + r) * img.width + (col_start - buffer[2] + c);
+          int buffered_idx = r * buffered_width + c;
+          gray_enc[buffered_idx] = encrypt(pk, n, q, poly_mod, t, gray[og_image_idx]);
+        }
+      }
+
+      printf("Applying FHE Sobel edge detection...\n");
+      sobel_fhe(gray_enc, sobel_enc, buffered_width, buffered_height, q, t, poly_mod);
+
+      printf("Decrypting FHE Sobel result...\n");
+      #pragma omp parallel for collapse(2) num_threads(4)
+      for (int r = 0; r < tile_height; r++) {
+        for (int c = 0; c < tile_width; c++) {
+          int buffered_idx = (r + buffer[0]) * buffered_width + (c + buffer[2]);
+
+          int64_t val = decrypt(sk, n, q, poly_mod, t, sobel_enc[buffered_idx]);
+          if (val > t / 2)
+            val = t - val;
+          if (val > 255)
+            val = 255;
+          fhe_sobel_temp[r * tile_width + c] = (uint8_t)val;
+        }
+      }
+
+      for (int r = 0; r < tile_height; r++) {
+        memcpy(&fhe_sobel[(row_start + r) * img.width + col_start], &fhe_sobel_temp[r * tile_width], (size_t)tile_width * sizeof(uint8_t));
+      }
+
+      free(gray_enc);
+      free(sobel_enc);
+      free(fhe_sobel_temp);
+    }
   }
+
+
   double enc_end = omp_get_wtime();
   double enc_time = enc_end - enc_start;
-
-  printf("Applying FHE Sobel edge detection...\n");
-  Ciphertext *sobel_enc =
-      (Ciphertext *)malloc(total_pixels * sizeof(Ciphertext));
-  double fhe_start = omp_get_wtime();
-  sobel_fhe(gray_enc, sobel_enc, img.width, img.height, q, t, poly_mod);
-  double fhe_end = omp_get_wtime();
-  double fhe_time = fhe_end - fhe_start;
-
-  printf("Decrypting FHE Sobel result...\n");
-  uint8_t *fhe_sobel = (uint8_t *)malloc(total_pixels * sizeof(uint8_t));
-  double dec_start = omp_get_wtime();
-  #pragma omp parallel for num_threads(4)
-  for (int i = 0; i < total_pixels; i++) {
-    int64_t val = decrypt(sk, n, q, poly_mod, t, sobel_enc[i]);
-    // Restore negative `gx + gy`
-    if (val > t / 2)
-      val = t - val;
-    if (val > 255)
-      val = 255;
-    fhe_sobel[i] = (uint8_t)val;
-  }
-  double dec_end = omp_get_wtime();
-  double dec_time = dec_end - dec_start;
 
   printf("Computing plaintext Sobel edge detection...\n");
   uint8_t *plain_sobel = (uint8_t *)calloc(total_pixels, sizeof(uint8_t));
@@ -220,9 +263,8 @@ int main(int argc, char **argv) {
   printf("\n=== Results ===\n");
   printf("Encryption time: %.4f s (%.2f ms/pixel)\n", enc_time,
          enc_time * 1000.0 / total_pixels);
-  printf("FHE Sobel time: %.4f s\n", fhe_time);
-  printf("Decryption time: %.4f s (%.2f ms/pixel)\n", dec_time,
-         dec_time * 1000.0 / total_pixels);
+  printf("FHE Sobel time (included in encryption time)\n");
+  printf("Decryption time (included in encryption time)\n");
   printf("Plaintext Sobel time: %.4f s\n", plain_time);
 
   save_image("output/sobel_fhe.png",
@@ -236,8 +278,6 @@ int main(int argc, char **argv) {
   printf("  output/sobel_fhe.png     (FHE Sobel edges)\n");
   printf("  output/sobel_plain.png   (plaintext Sobel edges)\n");
 
-  free(gray_enc);
-  free(sobel_enc);
   free(fhe_sobel);
   free(plain_sobel);
   free(gray);
