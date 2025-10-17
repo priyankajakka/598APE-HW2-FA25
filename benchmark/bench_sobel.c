@@ -186,6 +186,10 @@ int main(int argc, char **argv) {
   int tile_h = (img.height + tRows - 1) / tRows;
   int tile_w = (img.width  + tCols - 1) / tCols;
 
+  Ciphertext *gray_enc  = (Ciphertext *)malloc((size_t)(tile_h+2) * (tile_w+2) * sizeof(Ciphertext));
+  Ciphertext *sobel_enc = (Ciphertext *)malloc((size_t)(tile_h+2) * (tile_w+2) * sizeof(Ciphertext));
+  uint8_t *fhe_sobel_temp = (uint8_t *)malloc((size_t)(tile_h*tile_w) * sizeof(uint8_t));
+
   for (int tr = 0; tr < tRows; tr++) {
     for (int tc = 0; tc < tCols; tc++) {
       int row_start = tr * tile_h;
@@ -206,11 +210,6 @@ int main(int argc, char **argv) {
 
       int buffered_height = tile_height + buffer[0] + buffer[1];
       int buffered_width = tile_width  + buffer[2] + buffer[3];
-
-      Ciphertext *gray_enc  = (Ciphertext *)malloc((size_t)buffered_height * buffered_width * sizeof(Ciphertext));
-      Ciphertext *sobel_enc = (Ciphertext *)malloc((size_t)buffered_height * buffered_width * sizeof(Ciphertext));
-
-      uint8_t *fhe_sobel_temp = (uint8_t *)malloc((size_t)tile_pixels * sizeof(uint8_t));
 
       #pragma omp parallel for collapse(2) num_threads(4)
       for (int r = 0; r < buffered_height; r++) {
@@ -242,13 +241,11 @@ int main(int argc, char **argv) {
       for (int r = 0; r < tile_height; r++) {
         memcpy(&fhe_sobel[(row_start + r) * img.width + col_start], &fhe_sobel_temp[r * tile_width], (size_t)tile_width * sizeof(uint8_t));
       }
-
-      free(gray_enc);
-      free(sobel_enc);
-      free(fhe_sobel_temp);
     }
   }
-
+  free(gray_enc);
+  free(sobel_enc);
+  free(fhe_sobel_temp);
 
   double enc_end = omp_get_wtime();
   double enc_time = enc_end - enc_start;
