@@ -1,5 +1,42 @@
 # 598APE-HW2: Homomorphic Encryption
 
+This repository contains code for homework 2 of 598APE. 
+We implemented 3 optimizations. Each version of our code, including the original unoptimized program, is on its own branch.  
+
+| Optimization                                | Branch       |
+|---------------------------------------------|--------------|
+| Original (unoptimized)                      | `baseline`   |
+| Cap polynomial traversals to degree                    | `optimization1-polydegree`   |
+| Parallelization + Tiling of bench_bw          | `optimization2-parallelize-tile-bw`   |
+| Parallelization + Tiling of bench_sobel    | `optimization3-parallelize-tile-sobel`    |
+| All optimizations    | `main`    |
+
+To run each of the versions of code, checkout to the branch, pull, make the code, and run the commands!
+
+1. Checkout to branch
+```bash
+git checkout <branch-name>
+git pull
+```
+2. Replace `pjakka3` with your netid in dockerrun.sh
+```bash
+sudo docker run -it --security-opt seccomp=unconfined -v "$(pwd):/host" [NETID]/598ape /bin/bash
+```
+3. Run the following commands to build and the Docker container
+```bash
+./dockerrun.sh
+cd host
+make -j
+```
+4. Run commands for piano, globe, sphere, and elephant!
+
+| Input                                | Command       |
+|---------------------------------------------|--------------|
+| bench_matmul                     | ```./bench_matmul.exe 0 16```   |
+| bench_bw                    |  ```./bench_bw.exe inputs/bird.jpg ```   |
+| bench_sobel          | ```./bench_sobel.exe inputs/bird.jpg ```   |
+
+
 This is a C implementation of a SHE scheme based on the [Fan-Vercauteren](https://eprint.iacr.org/2012/144) RLWE-based approach and [toy implementations in Python](https://bit-ml.github.io/blog/post/homomorphic-encryption-toy-implementation-in-python/). Your task is to build and run it, then consider performance improvements.
 
 Warning: This code is for instruction only. Do not use this implementation in any practical setting!
