@@ -22,8 +22,9 @@ git pull
 ```bash
 sudo docker run -it --security-opt seccomp=unconfined -v "$(pwd):/host" [NETID]/598ape /bin/bash
 ```
-3. Run the following commands to build and the Docker container
+3. Run the following commands to build and run the Docker container
 ```bash
+sudo docker build .
 ./dockerrun.sh
 cd host
 make -j
