@@ -18,15 +18,18 @@ To run each of the versions of code, checkout to the branch, pull, make the code
 git checkout <branch-name>
 git pull
 ```
-2. Replace `pjakka3` with your netid in dockerrun.sh
+2. Replace `[NETID]` with your netid in dockerrun.sh
 ```bash
 sudo docker run -it --security-opt seccomp=unconfined -v "$(pwd):/host" [NETID]/598ape /bin/bash
 ```
 3. Run the following commands to build and run the Docker container
 ```bash
+cd docker
 sudo docker build .
+cd ..
 ./dockerrun.sh
 cd host
+make clean
 make -j
 ```
 4. Run commands for piano, globe, sphere, and elephant!
